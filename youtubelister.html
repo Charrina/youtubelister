@@ -1,0 +1,223 @@
+﻿<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <title></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
+	<style>
+		.subbutton{
+			margin:5px;
+		}
+		.subicon{
+			height: 60px;
+			width: 60px;
+			background-repeat: no-repeat;
+			background-size: 100%;
+		}
+	</style>
+</head>
+<body>
+    <script>
+        var GoogleAuth;
+        var SCOPE = 'https://www.googleapis.com/auth/youtube.force-ssl';
+        function handleClientLoad() {
+            // Load the API's client and auth2 modules.
+            // Call the initClient function after the modules load.
+            gapi.load('client:auth2', initClient);
+        }
+
+        function initClient() {
+            // Retrieve the discovery document for version 3 of YouTube Data API.
+            // In practice, your app can retrieve one or more discovery documents.
+            var discoveryUrl = 'https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest';
+
+            // Initialize the gapi.client object, which app uses to make API requests.
+            // Get API key and client ID from API Console.
+            // 'scope' field specifies space-delimited list of access scopes.
+            gapi.client.init({
+                'apiKey': 'AIzaSyD_QaGCP0S7xRd8eekGoXPsdwha9o8ktNo',
+                'clientId': '407813220814-cn98tenofep79bhgltco9akhe8plmqj3.apps.googleusercontent.com',
+                'discoveryDocs': [discoveryUrl],
+                'scope': SCOPE
+            }).then(function () {
+                GoogleAuth = gapi.auth2.getAuthInstance();
+
+                // Listen for sign-in state changes.
+                GoogleAuth.isSignedIn.listen(updateSigninStatus);
+
+                // Handle initial sign-in state. (Determine if user is already signed in.)
+                var user = GoogleAuth.currentUser.get();
+                setSigninStatus();
+
+                // Call handleAuthClick function when user clicks on
+                //      "Sign In/Authorize" button.
+                $('#sign-in-or-out-button').click(function () {
+                    handleAuthClick();
+                });
+                $('#revoke-access-button').click(function () {
+                    revokeAccess();
+                });
+            });
+        }
+
+        function handleAuthClick() {
+            if (GoogleAuth.isSignedIn.get()) {
+                // User is authorized and has clicked "Sign out" button.
+                GoogleAuth.signOut();
+            } else {
+                // User is not signed in. Start Google auth flow.
+                GoogleAuth.signIn();
+            }
+        }
+
+        function revokeAccess() {
+            GoogleAuth.disconnect();
+        }
+
+        function setSigninStatus(isSignedIn) {
+            var user = GoogleAuth.currentUser.get();
+            var isAuthorized = user.hasGrantedScopes(SCOPE);
+            if (isAuthorized) {
+                $('#sign-in-or-out-button').html('Sign out');
+                $('#revoke-access-button').css('display', 'inline-block');
+                $('#auth-status').html('You are currently signed in and have granted ' +
+                    'access to this app.');
+                ladeSubscriptions();
+            } else {
+                $('#sign-in-or-out-button').html('Sign In/Authorize');
+                $('#revoke-access-button').css('display', 'none');
+                $('#auth-status').html('You have not authorized this app or you are ' +
+                    'signed out.');
+            }
+        }
+
+        function updateSigninStatus(isSignedIn) {
+            setSigninStatus();
+        }
+
+        //youtube teil
+		function loadVideos(){
+			$("#videosammlung").empty();
+			$("#meldung").empty();
+			
+			currentChannelId = this.getAttribute("cid");
+			holeVideoIds(new Date().toISOString());
+		}
+		
+		function holeVideoIds(ältestes){
+			//https://developers.google.com/youtube/v3/docs/search/list
+			var request = gapi.client.youtube.search.list({
+                'part': 'snippet', 'maxResults':20,
+				'channelId': currentChannelId,
+				'order': 'date',
+				'type': 'video',
+				'publishedBefore': ältestes
+				});
+			request.execute(function (response) {
+				let ids = [];
+				if(response.code == 403){
+					$("#meldung").html("fehler: " + response.error.message);//https://developers.google.com/
+					return;
+				}
+				if (response.items.length == 0) {
+					$("#meldung").html("keine Ergebnisse: videos");
+					return;
+				}			
+                for (var i = 0; i < response.items.length; i++) {
+					ids.push(response.items[i].id.videoId);
+				}
+				
+				filtereVideoIds(response.items, ids.join(), ältestes);
+			});
+		};
+		
+		function filtereVideoIds(videos, ids, ältestes){
+			var request = gapi.client.youtube.videos.getRating({
+				'id' : `[${ids}]`
+			});
+			request.execute(function (response){
+				let anzahl = $('#videosammlung').children().length;
+				
+				for (var i = 0; i < response.items.length; i++) {
+					//video mit dieser Id suchen
+					let video;
+					let videoId = response.items[i].videoId;
+					for (var v = 0; v < videos.length; v++) {
+						if (videos[v].id.videoId === videoId){
+							video = videos[v];
+							break;
+						}
+					}
+					ältestes = video.snippet.publishedAt;
+					
+					//sachen machen
+                    if (response.items[i].rating === "none"){
+						AddTagFor(video, videoId);
+						anzahl++;
+						if(anzahl >= 20) break;
+					}
+				}
+				if (anzahl < 20) holeVideoIds(ältestes);					
+			});
+		}
+		
+		function AddTagFor(video, videoId){
+			let videoDiv = $(`<a href='https://www.youtube.com/watch?v=${videoId}' target='_blank'><img src='${video.snippet.thumbnails.default.url}'/><span>${video.snippet.title}</span></a>`);
+			videoDiv.appendTo($('#videosammlung'));
+		}
+		
+        function ladeSubscriptions() {
+            // Example 1: Use method-specific function
+            var request = gapi.client.youtube.subscriptions.list({
+                'part': 'snippet', 'mine': 'true', 'maxResults':20 });
+
+            // Execute the API request.
+            request.execute(function (response) {
+			
+				if(response.code == 403){
+					$("#meldung").html("fehler: " + response.error.message);
+					return;
+				}
+				if (response.items.length == 0){
+					$("#meldung").html("keine Ergebnisse: subscription");
+					return;
+				}				
+                for (var i = 0; i < response.items.length; i++) {
+                    let item = response.items[i];
+					
+                    let sub = $(`<div class="btn btn-outline-secondary subbutton" cid="${item.snippet.resourceId.channelId}"><div class="subicon" style="background-image:url('${item.snippet.thumbnails.default.url}')"></div><div class="subtext">${item.snippet.title}</div></div>`);
+                    sub.appendTo($('#subleiste'));
+					sub.click(loadVideos);
+                }
+            });
+        }
+		
+    </script>
+
+    <br />
+    <button id="sign-in-or-out-button" class="btn btn-primary" style="margin-left: 25px">
+        Sign In/Authorize
+    </button>
+    <button id="revoke-access-button"  class="btn btn-primary" style="display: none; margin-left: 25px">
+        Revoke access
+    </button>
+	<span id='meldung'><span>
+    <div id="auth-status" style="display: inline; padding-left: 25px"></div><hr>
+
+    <div id="subleiste">
+    </div>
+	<hr/>
+	<div id="videosammlung">
+	</div>
+
+
+
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <script async defer src="https://apis.google.com/js/api.js"
+            onload="this.onload=function(){};handleClientLoad()"
+            onreadystatechange="if (this.readyState === 'complete') this.onload()">
+    </script>
+</body>
+</html>
